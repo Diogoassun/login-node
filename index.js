@@ -6,7 +6,7 @@ const axios = require('axios');
 const db = require('./mysql'); // arquivo com conexão mysql2/promise
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000; // Usa a porta do ambiente de deploy
 const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // sua API key Mailboxlayer
 
 // Sessão
@@ -30,7 +30,9 @@ app.get('/', (req, res) => {
     console.log('Usuário logado:', req.session.email);
     return res.render('logado');
   }
-  res.render('index');
+  // CORREÇÃO: Sempre passa as variáveis 'query' e 'erro' para a view.
+  // req.query pega os parâmetros da URL (ex: ?cadastro=sucesso)
+  res.render('index', { query: req.query, erro: null });
 });
 
 // Login
@@ -44,7 +46,8 @@ app.post('/', async (req, res) => {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      return res.render('index', { erro: 'E-mail ou senha incorretos' });
+      // Passa a mensagem de erro e mantém a query, caso exista.
+      return res.render('index', { erro: 'E-mail ou senha incorretos', query: req.query });
     }
   } catch (err) {
     console.error('Erro no banco:', err.message);
@@ -86,7 +89,8 @@ app.post('/register', async (req, res) => {
     // Inserir no MySQL
     try {
       await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
-      res.send('Usuário cadastrado com sucesso! Agora faça login.');
+      // Redireciona para a página de login com um parâmetro de sucesso na URL
+      res.redirect('/?cadastro=sucesso');
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') {
         return res.send('Este e-mail já está cadastrado');
@@ -99,6 +103,16 @@ app.post('/register', async (req, res) => {
     console.error('Erro na API:', err.message);
     res.send('Erro ao verificar o e-mail. Tente novamente.');
   }
+});
+
+// Rota de Logout
+app.get('/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      return res.status(500).send('Não foi possível fazer logout.');
+    }
+    res.redirect('/');
+  });
 });
 
 app.listen(port, () => {
