@@ -1,3 +1,4 @@
+require('dotenv').config(); // Carrega as variáveis do .env;
 const mysql = require('mysql2');
 
 const pool = mysql.createPool({
