@@ -6,41 +6,42 @@ const axios = require('axios');
 const db = require('./mysql'); // arquivo com conexão mysql2/promise
 
 const app = express();
-const port = process.env.PORT || 3000; // Usa a porta do ambiente de deploy
+// Usa a porta fornecida pelo ambiente de deploy (como o Render) ou a porta 3000 localmente
+const port = process.env.PORT || 3000; 
 const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // sua API key Mailboxlayer
 
 // Sessão
 app.use(session({
-  secret: 'mysecretkey',
+  secret: 'mysecretkey', // Para produção, use uma chave mais segura e do ambiente
   resave: false,
   saveUninitialized: true
 }));
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Views e estáticos
+// Configuração das Views (EJS) e arquivos estáticos (CSS)
 app.engine('html', require('ejs').renderFile);
 app.set('view engine', 'html');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-// Página inicial
+// Rota da página inicial
 app.get('/', (req, res) => {
   if (req.session.email) {
     console.log('Usuário logado:', req.session.email);
     return res.render('logado');
   }
   
-  // Objeto de dados para a view. Garante que 'query' e 'erro' sempre existam.
+  // CORREÇÃO: Sempre envia um objeto com 'query' e 'erro' para a view.
   const viewData = {
-    query: req.query,
+    query: req.query, // Pega os parâmetros da URL (ex: ?cadastro=sucesso)
     erro: null
   };
   
   res.render('index', viewData);
 });
 
-// Login
+// Rota de Login
 app.post('/', async (req, res) => {
   const { email, password } = req.body;
 
@@ -51,7 +52,7 @@ app.post('/', async (req, res) => {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      // Objeto de dados para a view em caso de erro no login.
+      // Envia a mensagem de erro para a view.
       const viewData = {
         erro: 'E-mail ou senha incorretos',
         query: req.query
@@ -60,23 +61,23 @@ app.post('/', async (req, res) => {
     }
   } catch (err) {
     console.error('Erro no banco:', err.message);
-    res.send('Erro no banco de dados');
+    res.status(500).send('Erro no banco de dados');
   }
 });
 
-// Página de cadastro
+// Rota da página de cadastro
 app.get('/register', (req, res) => {
   res.render('register');
 });
 
-// Cadastro
+// Rota de Cadastro
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) return res.send('Preencha o e-mail e a senha');
+  if (!email || !password) return res.status(400).send('Preencha o e-mail e a senha');
 
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  if (!emailValido) return res.send('Formato de e-mail inválido');
+  if (!emailValido) return res.status(400).send('Formato de e-mail inválido');
 
   try {
     const response = await axios.get('http://apilayer.net/api/check', {
@@ -89,11 +90,9 @@ app.post('/register', async (req, res) => {
     });
 
     const data = response.data;
-    console.log('Resposta da API:', data);
-
-    if (!data.format_valid) return res.send('E-mail com formato inválido');
-    if (!data.mx_found) return res.send('Domínio de e-mail inválido');
-    if (data.disposable) return res.send('E-mails temporários não são permitidos');
+    if (!data.format_valid || !data.mx_found || data.disposable) {
+        return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
+    }
 
     // Inserir no MySQL
     try {
@@ -102,15 +101,15 @@ app.post('/register', async (req, res) => {
       res.redirect('/?cadastro=sucesso');
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') {
-        return res.send('Este e-mail já está cadastrado');
+        return res.status(409).send('Este e-mail já está cadastrado');
       }
       console.error('Erro ao cadastrar:', err.message);
-      res.send('Erro ao cadastrar usuário');
+      res.status(500).send('Erro ao cadastrar usuário');
     }
 
   } catch (err) {
     console.error('Erro na API:', err.message);
-    res.send('Erro ao verificar o e-mail. Tente novamente.');
+    res.status(500).send('Erro ao verificar o e-mail. Tente novamente.');
   }
 });
 
