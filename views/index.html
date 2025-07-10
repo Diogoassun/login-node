@@ -6,8 +6,14 @@
   <link rel="stylesheet" href="/public/style.css">
 </head>
 <body>
-    <% if (query && query.cadastro === 'sucesso') { %>
-    <p class="mensagem-sucesso">Cadastro realizado com sucesso! Faça login.</p>
+    <!-- CORREÇÃO: Verifica se a variável 'query' existe antes de usá-la -->
+    <% if (typeof query !== 'undefined' && query.cadastro === 'sucesso') { %>
+      <p class="mensagem-sucesso">Cadastro realizado com sucesso! Faça login.</p>
+    <% } %>
+
+    <!-- Exibe a mensagem de erro se ela existir -->
+    <% if (typeof erro !== 'undefined' && erro) { %>
+      <p class="mensagem-erro"><%= erro %></p>
     <% } %>
 
   <form action="/" method="POST">

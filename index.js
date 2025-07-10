@@ -30,9 +30,14 @@ app.get('/', (req, res) => {
     console.log('Usuário logado:', req.session.email);
     return res.render('logado');
   }
-  // CORREÇÃO: Sempre passa as variáveis 'query' e 'erro' para a view.
-  // req.query pega os parâmetros da URL (ex: ?cadastro=sucesso)
-  res.render('index', { query: req.query, erro: null });
+  
+  // Objeto de dados para a view. Garante que 'query' e 'erro' sempre existam.
+  const viewData = {
+    query: req.query,
+    erro: null
+  };
+  
+  res.render('index', viewData);
 });
 
 // Login
@@ -46,8 +51,12 @@ app.post('/', async (req, res) => {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      // Passa a mensagem de erro e mantém a query, caso exista.
-      return res.render('index', { erro: 'E-mail ou senha incorretos', query: req.query });
+      // Objeto de dados para a view em caso de erro no login.
+      const viewData = {
+        erro: 'E-mail ou senha incorretos',
+        query: req.query
+      };
+      return res.render('index', viewData);
     }
   } catch (err) {
     console.error('Erro no banco:', err.message);
