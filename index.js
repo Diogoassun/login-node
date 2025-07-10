@@ -33,8 +33,8 @@ app.get('/', (req, res) => {
   
   // CORREÇÃO: Sempre envia um objeto com 'query' e 'erro' para a view.
   const viewData = {
-    query: req.query, // Pega os parâmetros da URL (ex: ?cadastro=sucesso)
-    erro: null
+    erro: 'E-mail ou senha incorretos',
+    query: {} // ← previne erro no EJS
   };
   
   res.render('index', viewData);
