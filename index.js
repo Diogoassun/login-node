@@ -32,12 +32,10 @@ app.get('/', (req, res) => {
   }
   
   // CORREÇÃO: Sempre envia um objeto com 'query' e 'erro' para a view.
-  const viewData = {
-    erro: 'E-mail ou senha incorretos',
-    query: {} // ← previne erro no EJS
-  };
-  
-  res.render('index', viewData);
+  res.render('index', {
+    erro: null,   // sem erro ao abrir a página
+    query: req.query || {}
+  });
 });
 
 // Rota de Login
