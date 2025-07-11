@@ -57,7 +57,7 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => {
   if (req.session.email) {
     console.log('Usuário logado:', req.session.email);
-    return res.render('logado');
+    return res.render('logado', { email: rows[0].email });
   }
 
   res.render('index', {
