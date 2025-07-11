@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const db = require('./mysql'); // conexão com MySQL
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -22,7 +23,7 @@ const transporter = nodemailer.createTransport({
 async function enviarEmail(destinatario, assunto, mensagem) {
   try {
     const info = await transporter.sendMail({
-      from: '"Meu Site" <bandeiradiogo96@gmail.com>',
+      from: '"SMAI" <bandeiradiogo96@gmail.com>',
       to: destinatario,
       subject: assunto,
       text: mensagem
@@ -147,7 +148,7 @@ app.post('/register', async (req, res) => {
       await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
 
         // Envia e-mail de boas-vindas
-        await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
+        await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!', 'desfrute do que o nosso sistema de monitoramento inteligente tem para lhe oferecer!');
 
         res.redirect('/?cadastro=sucesso');
     } catch (err) {
@@ -176,4 +177,101 @@ app.get('/logout', (req, res) => {
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
+});
+
+// --------------- Rota para página "Esqueci minha senha"
+app.get('/forgot', (req, res) => {
+  res.render('forgot', { erro: null, sucesso: null });
+});
+
+// --------------- Enviar e-mail com link para resetar senha
+app.post('/forgot', async (req, res) => {
+  const { email } = req.body;
+
+  // Verifica se e-mail existe
+  try {
+    const [rows] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+
+    if (rows.length === 0) {
+      return res.render('forgot', { erro: 'E-mail não cadastrado.', sucesso: null });
+    }
+
+    // Gera token aleatório
+    const token = crypto.randomBytes(20).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000); // válido por 1 hora
+
+    // Salva token no banco
+    await db.execute(
+      'INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)',
+      [email, token, expiresAt]
+    );
+
+    // Monta link de redefinição
+    const resetLink = `${req.protocol}://${req.get('host')}/reset/${token}`;
+
+    // Envia email com o link
+    const mensagem = `Você solicitou redefinição de senha.\nClique no link para alterar sua senha:\n${resetLink}\n\nEste link é válido por 1 hora.`;
+
+    await enviarEmail(email, 'Redefinição de senha', mensagem);
+
+    res.render('forgot', { erro: null, sucesso: 'Email enviado com instruções para redefinir a senha.' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erro no servidor');
+  }
+});
+
+// --------------- Página para resetar senha (formulário)
+app.get('/reset/:token', async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM password_reset_tokens WHERE token = ? AND expires_at > NOW()',
+      [token]
+    );
+
+    if (rows.length === 0) {
+      return res.send('Token inválido ou expirado.');
+    }
+
+    res.render('reset', { token, erro: null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erro no servidor');
+  }
+});
+
+// --------------- Recebe nova senha e atualiza no banco
+app.post('/reset/:token', async (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  if (!password) return res.render('reset', { token, erro: 'Digite a nova senha.' });
+
+  try {
+    // Verifica token válido
+    const [rows] = await db.execute(
+      'SELECT * FROM password_reset_tokens WHERE token = ? AND expires_at > NOW()',
+      [token]
+    );
+
+    if (rows.length === 0) {
+      return res.send('Token inválido ou expirado.');
+    }
+
+    const email = rows[0].email;
+
+    // Atualiza senha (atenção: ideal criptografar a senha antes)
+    await db.execute('UPDATE users SET password = ? WHERE email = ?', [password, email]);
+
+    // Remove token (opcional, para segurança)
+    await db.execute('DELETE FROM password_reset_tokens WHERE token = ?', [token]);
+
+    res.send('Senha atualizada com sucesso! Agora você pode fazer login.');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erro no servidor');
+  }
 });

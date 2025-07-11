@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><title>Nova Senha</title></head>
+<body>
+  <h2>Redefinir senha</h2>
+  <% if (erro) { %><p style="color:red;"><%= erro %></p><% } %>
+  <form action="/reset/<%= token %>" method="POST">
+    <input type="password" name="password" placeholder="Nova senha" required><br>
+    <button type="submit">Alterar senha</button>
+  </form>
+</body>
+</html>
