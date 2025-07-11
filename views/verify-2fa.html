@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Verificação de Dois Fatores</title>
+    <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+    <form action="/verify-2fa" method="POST">
+        <h2>Verificação de Dois Fatores</h2>
+        <p>Abra seu aplicativo de autenticação e insira o código de 6 dígitos.</p>
+        
+        <input type="text" name="token" placeholder="Código de 6 dígitos" required autocomplete="off" style="text-align: center;">
+        
+        <button type="submit">Verificar</button>
+
+        <% if (typeof erro !== 'undefined' && erro) { %>
+            <p style="color: #ffcccc; margin-top: 15px;"><%= erro %></p>
+        <% } %>
+    </form>
+</body>
+</html>

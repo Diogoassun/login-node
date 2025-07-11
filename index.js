@@ -100,9 +100,23 @@ app.post('/', async (req, res) => {
     );
 
     if (rows.length > 0) {
-      req.session.email = rows[0].email;
-      return res.render('logado');
-    } else {
+  const user = rows[0];
+
+  if (user.two_factor_enabled) {
+    // Gera código de verificação e salva em sessão
+    const verificationCode = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
+    req.session.pendingUser = user.email;
+    req.session.verificationCode = verificationCode;
+    req.session.verificationExpires = Date.now() + 5 * 60 * 1000; // 5 minutos
+
+    await enviarEmail(user.email, 'Código de Verificação 2FA', `Seu código de verificação é: ${verificationCode}`);
+
+    return res.redirect('/verify-2fa');
+  }
+
+  req.session.email = user.email;
+  return res.render('logado');
+} else {
       return res.render('index', {
         erro: 'E-mail ou senha incorretos',
         query: {}
@@ -274,4 +288,42 @@ app.post('/reset/:token', async (req, res) => {
     console.error(err);
     res.status(500).send('Erro no servidor');
   }
+});
+
+app.get('/verify-2fa', (req, res) => {
+  if (!req.session.pendingUser) return res.redirect('/');
+  res.render('verify-2fa', { erro: null });
+});
+
+app.post('/verify-2fa', async (req, res) => {
+  const { code } = req.body;
+
+  if (!req.session.verificationCode || Date.now() > req.session.verificationExpires) {
+    return res.render('verify-2fa', { erro: 'Código expirado. Faça login novamente.' });
+  }
+
+  if (parseInt(code) !== req.session.verificationCode) {
+    return res.render('verify-2fa', { erro: 'Código inválido.' });
+  }
+
+  // Código válido
+  req.session.email = req.session.pendingUser;
+  delete req.session.pendingUser;
+  delete req.session.verificationCode;
+  delete req.session.verificationExpires;
+
+  res.render('logado');
+});
+
+
+app.get('/enable-2fa', async (req, res) => {
+  if (!req.session.email) return res.redirect('/');
+  res.render('enable-2fa', { mensagem: null });
+});
+
+app.post('/enable-2fa', async (req, res) => {
+  if (!req.session.email) return res.redirect('/');
+
+  await db.execute('UPDATE users SET two_factor_enabled = true WHERE email = ?', [req.session.email]);
+  res.render('enable-2fa', { mensagem: 'Autenticação de dois fatores ativada com sucesso.' });
 });

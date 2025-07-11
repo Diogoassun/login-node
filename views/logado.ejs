@@ -1,1 +1,20 @@
-<h2>Você está logado!</h2>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Logado</title>
+    <link rel="stylesheet" href="/public/style.css">
+</head>
+<body style="color: white; text-align: center;">
+    <h2>Você está logado!</h2>
+    <p>Bem-vindo(a), <%= email %>.</p>
+    
+    <div style="margin-top: 30px;">
+        <a href="/enable-2fa" style="color: #8f94fb; font-weight: bold; text-decoration: none; border: 1px solid #8f94fb; padding: 10px 15px; border-radius: 8px;">Ativar 2FA</a>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <a href="/logout" style="color: #ccc; font-size: 14px;">Sair</a>
+    </div>
+</body>
+</html>
