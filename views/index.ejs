@@ -24,16 +24,22 @@
       border: 1px solid #f5c6cb;
       text-align: center;
     }
+    /* Estilo para centralizar o reCAPTCHA */
+    .g-recaptcha {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
   </style>
+  <!-- 1. Script do Google reCAPTCHA -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
 
-  <!-- CORREÇÃO: Verifica se a variável 'query' existe antes de usá-la -->
   <% if (typeof query !== 'undefined' && query.cadastro === 'sucesso') { %>
     <p class="mensagem-sucesso">Cadastro realizado com sucesso! Faça login.</p>
   <% } %>
 
-  <!-- Exibe a mensagem de erro se ela existir e não for nula -->
   <% if (typeof erro !== 'undefined' && erro) { %>
     <p class="mensagem-erro"><%= erro %></p>
   <% } %>
@@ -42,6 +48,10 @@
     <h2>Login</h2>
     <input type="email" name="email" placeholder="E-mail" required><br>
     <input type="password" name="password" placeholder="Senha" required><br>
+    
+    <!-- 2. Widget do reCAPTCHA com a sua chave -->
+    <div class="g-recaptcha" data-sitekey="6Leu9H4rAAAAAKL1I7ilFxLvpcnK0ZoWeN5R1wrP"></div>
+
     <button type="submit">Entrar</button>
     <p>Não tem conta? <a href="./register">Cadastre-se</a></p>
   </form>

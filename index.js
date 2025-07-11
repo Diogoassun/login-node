@@ -6,21 +6,23 @@ const axios = require('axios');
 const db = require('./mysql'); // arquivo com conexão mysql2/promise
 
 const app = express();
-// Usa a porta fornecida pelo ambiente de deploy (como o Render) ou a porta 3000 localmente
 const port = process.env.PORT || 3000; 
-const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // sua API key Mailboxlayer
+const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622';
+// Chave secreta do Google reCAPTCHA que você forneceu
+const recaptchaSecretKey = '6Leu9H4rAAAAAHlL0O_fcrJe4i1AgaXW_tPjduUs';
 
 // Sessão
 app.use(session({
-  secret: 'mysecretkey', // Para produção, use uma chave mais segura e do ambiente
+  secret: 'mysecretkey',
   resave: false,
   saveUninitialized: true
 }));
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Configuração das Views (EJS) e arquivos estáticos (CSS)
-app.set('view engine', 'ejs');
+// Configuração das Views (EJS) para renderizar arquivos .html
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'html');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
@@ -31,34 +33,48 @@ app.get('/', (req, res) => {
     return res.render('logado');
   }
   
-  // CORREÇÃO: Sempre envia um objeto com 'query' e 'erro' para a view.
+  // Envia um objeto com 'query' e 'erro' para a view.
   res.render('index', {
-    erro: null,   // sem erro ao abrir a página
-    query: req.query || {}
+    query: req.query,
+    erro: null
   });
 });
 
-// Rota de Login
+// Rota de Login com validação reCAPTCHA
 app.post('/', async (req, res) => {
   const { email, password } = req.body;
+  const recaptchaToken = req.body['g-recaptcha-response'];
 
   try {
+    // 1. Validar o token do reCAPTCHA com a API do Google
+    const verificationURL = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecretKey}&response=${recaptchaToken}`;
+    const googleResponse = await axios.post(verificationURL);
+    const { success } = googleResponse.data;
+
+    if (!success) {
+      // Se a verificação falhar, renderiza a página de login com um erro.
+      return res.render('index', { 
+        erro: 'Falha na verificação do reCAPTCHA. Tente novamente.', 
+        query: req.query 
+      });
+    }
+
+    // 2. Se o reCAPTCHA for válido, prossegue com a lógica de login
     const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
 
     if (rows.length > 0) {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      // Envia a mensagem de erro para a view.
-      const viewData = {
+      // Se o login falhar, renderiza com a mensagem de erro apropriada.
+      return res.render('index', {
         erro: 'E-mail ou senha incorretos',
         query: req.query
-      };
-      return res.render('index', viewData);
+      });
     }
   } catch (err) {
-    console.error('Erro no banco:', err.message);
-    res.status(500).send('Erro no banco de dados');
+    console.error('Erro no processo de login:', err.message);
+    res.status(500).send('Erro interno no servidor.');
   }
 });
 
@@ -94,7 +110,6 @@ app.post('/register', async (req, res) => {
     // Inserir no MySQL
     try {
       await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
-      // Redireciona para a página de login com um parâmetro de sucesso na URL
       res.redirect('/?cadastro=sucesso');
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') {
