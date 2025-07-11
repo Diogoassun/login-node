@@ -153,8 +153,14 @@ app.get('/enable-2fa', (req, res) => {
 
 app.post('/enable-2fa', async (req, res) => {
   if (!req.session.email) return res.redirect('/');
-  await db.execute('UPDATE users SET two_factor_enabled = true WHERE email = ?', [req.session.email]);
-  res.render('enable-2fa', { mensagem: 'Autenticação de dois fatores ativada com sucesso.' });
+
+  try {
+    await db.execute('UPDATE users SET two_factor_enabled = 1 WHERE email = ?', [req.session.email]);
+    res.render('enable-2fa', { mensagem: 'Autenticação de dois fatores ativada com sucesso.' });
+  } catch (err) {
+    console.error('Erro ao ativar 2FA:', err);
+    res.status(500).send('Erro ao ativar autenticação de dois fatores.');
+  }
 });
 
 app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
