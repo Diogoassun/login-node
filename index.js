@@ -9,52 +9,50 @@ const nodemailer = require('nodemailer');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- CONFIGURAÇÃO DO NODEMAILER ---
-// Usando as suas credenciais do Gmail com a senha de app
+// Configuração do Nodemailer (Gmail com senha de app)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'bandeiradiogo96@gmail.com', // Seu e-mail
-    pass: 'hwbkedimtmwblxmv'           // Sua senha de app (sem espaços)
+    user: 'bandeiradiogo96@gmail.com', // seu Gmail
+    pass: 'hwbk edim tmwb lxmv' // sua senha de app
   }
 });
 
-// --- FUNÇÃO PARA ENVIAR E-MAIL ---
-async function enviarEmail(destinatario, assunto, mensagemHtml) {
+// Função para enviar e-mail
+async function enviarEmail(destinatario, assunto, mensagem) {
   try {
     const info = await transporter.sendMail({
-      from: '"Meu Sistema de Login" <bandeiradiogo96@gmail.com>', // Remetente
-      to: destinatario, // E-mail do usuário que se cadastrou
-      subject: assunto,  // Assunto do e-mail
-      html: mensagemHtml // Conteúdo do e-mail em HTML
+      from: '"Meu Site" <bandeiradiogo96@gmail.com>',
+      to: destinatario,
+      subject: assunto,
+      text: mensagem
     });
     console.log('E-mail enviado: %s', info.messageId);
   } catch (erro) {
     console.error('Erro ao enviar e-mail:', erro.message);
   }
 }
-// ------------------------------------
 
-// Suas chaves de API
+
+// Suas chaves
 const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // Mailboxlayer
 const recaptchaSecret = '6Leu9H4rAAAAAHlL0O_fcrJe4i1AgaXW_tPjduUs'; // reCAPTCHA (SECRET KEY)
 
-// Configuração da Sessão
+// Sessão
 app.use(session({
-  secret: 'mysecretkey', // Em produção, use uma chave mais segura
+  secret: 'mysecretkey',
   resave: false,
   saveUninitialized: true
 }));
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Configuração das Views (EJS) e arquivos estáticos (CSS)
-app.engine('html', require('ejs').renderFile);
-app.set('view engine', 'html');
+// Views e estáticos
+app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-// Rota da página inicial
+// Página inicial
 app.get('/', (req, res) => {
   if (req.session.email) {
     console.log('Usuário logado:', req.session.email);
@@ -67,42 +65,61 @@ app.get('/', (req, res) => {
   });
 });
 
-// Rota de Login
+// Login
 app.post('/', async (req, res) => {
   const { email, password, 'g-recaptcha-response': captcha } = req.body;
 
+  // Verifica se marcou o captcha
   if (!captcha) {
-    return res.render('index', { erro: 'Por favor, confirme que você não é um robô.', query: {} });
+    return res.render('index', {
+      erro: 'Por favor, confirme que você não é um robô.',
+      query: {}
+    });
   }
 
+  // Verifica com o Google reCAPTCHA
   try {
     const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`;
-    const response = await axios.post(verifyUrl);
+    const response = await axios.post(verifyUrl, null, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
 
-    if (!response.data.success) {
-      return res.render('index', { erro: 'Falha na verificação do reCAPTCHA.', query: {} });
+    const data = response.data;
+
+    if (!data.success) {
+      return res.render('index', {
+        erro: 'Falha na verificação do reCAPTCHA.',
+        query: {}
+      });
     }
 
-    const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
+    // Validação de login
+    const [rows] = await db.execute(
+      'SELECT * FROM users WHERE email = ? AND password = ?', [email, password]
+    );
 
     if (rows.length > 0) {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      return res.render('index', { erro: 'E-mail ou senha incorretos', query: {} });
+      return res.render('index', {
+        erro: 'E-mail ou senha incorretos',
+        query: {}
+      });
     }
+
   } catch (err) {
-    console.error('Erro no processo de login:', err.message);
-    return res.status(500).send('Erro interno no servidor.');
+    console.error('Erro ao verificar reCAPTCHA:', err.message);
+    return res.status(500).send('Erro ao verificar reCAPTCHA');
   }
 });
 
-// Rota da página de cadastro
+// Página de cadastro
 app.get('/register', (req, res) => {
   res.render('register');
 });
 
-// Rota de Cadastro
+// Cadastro
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
 
@@ -113,36 +130,41 @@ app.post('/register', async (req, res) => {
 
   try {
     const response = await axios.get('http://apilayer.net/api/check', {
-      params: { access_key: mailboxApiKey, email: email, smtp: 1, format: 1 }
+      params: {
+        access_key: mailboxApiKey,
+        email: email,
+        smtp: 1,
+        format: 1
+      }
     });
 
-    if (!response.data.format_valid || !response.data.mx_found || response.data.disposable) {
+    const data = response.data;
+    if (!data.format_valid || !data.mx_found || data.disposable) {
       return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
     }
 
-    await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
+    try {
+      await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
 
-    // Envia e-mail de boas-vindas usando a função
-    const mensagemBoasVindas = `
-      <h1>Olá, ${email}!</h1>
-      <p>Seu cadastro em nosso sistema foi realizado com sucesso.</p>
-      <p>Agradecemos por se juntar a nós.</p>
-      <p>Atenciosamente,<br>Equipe do Sistema</p>
-    `;
-    await enviarEmail(email, 'Bem-vindo(a) ao Sistema!', mensagemBoasVindas);
+        // Envia e-mail de boas-vindas
+        await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
 
-    res.redirect('/?cadastro=sucesso');
+        res.redirect('/?cadastro=sucesso');
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).send('Este e-mail já está cadastrado');
+      }
+      console.error('Erro ao cadastrar:', err.message);
+      res.status(500).send('Erro ao cadastrar usuário');
+    }
 
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).send('Este e-mail já está cadastrado');
-    }
-    console.error('Erro no processo de cadastro:', err.message);
-    res.status(500).send('Erro ao realizar o cadastro. Tente novamente.');
+    console.error('Erro na API:', err.message);
+    res.status(500).send('Erro ao verificar o e-mail. Tente novamente.');
   }
 });
 
-// Rota de Logout
+// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {
