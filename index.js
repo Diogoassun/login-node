@@ -12,6 +12,7 @@ const qrcode = require('qrcode');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configuração do Nodemailer
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -48,6 +49,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+// PÁGINA INICIAL
 app.get('/', async (req, res) => {
   if (req.session.email) {
     return res.render('logado', { email: req.session.email });
@@ -55,14 +57,15 @@ app.get('/', async (req, res) => {
   res.render('index', { erro: null, query: req.query || {} });
 });
 
+// LOGIN
 app.post('/', async (req, res) => {
   const { email, password, 'g-recaptcha-response': captcha } = req.body;
-  if (!captcha) return res.render('index', { erro: 'Por favor, confirme que você não é um robô.', query: {} });
+  if (!captcha) return res.render('index', { erro: 'Confirme que você não é um robô.', query: {} });
 
   try {
     const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`;
     const response = await axios.post(verifyUrl);
-    if (!response.data.success) return res.render('index', { erro: 'Falha na verificação do reCAPTCHA.', query: {} });
+    if (!response.data.success) return res.render('index', { erro: 'Falha no reCAPTCHA.', query: {} });
 
     const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
     if (rows.length > 0) {
@@ -83,6 +86,7 @@ app.post('/', async (req, res) => {
   }
 });
 
+// REGISTRO
 app.get('/register', (req, res) => res.render('register'));
 
 app.post('/register', async (req, res) => {
@@ -97,8 +101,9 @@ app.post('/register', async (req, res) => {
     });
     const data = response.data;
     if (!data.format_valid || !data.mx_found || data.disposable) {
-      return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
+      return res.status(400).send('Este e-mail não é válido.');
     }
+
     await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
     await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
     res.redirect('/?cadastro=sucesso');
@@ -109,13 +114,15 @@ app.post('/register', async (req, res) => {
   }
 });
 
+// LOGOUT
 app.get('/logout', (req, res) => {
   req.session.destroy(err => {
-    if (err) return res.status(500).send('Não foi possível fazer logout.');
+    if (err) return res.status(500).send('Erro ao sair');
     res.redirect('/');
   });
 });
 
+// VERIFICAÇÃO 2FA TOTP
 app.get('/verify-2fa', (req, res) => {
   if (!req.session.pendingUser || !req.session.twoFactorSecret) return res.redirect('/');
   res.render('verify-2fa', { erro: null });
@@ -123,6 +130,7 @@ app.get('/verify-2fa', (req, res) => {
 
 app.post('/verify-2fa', (req, res) => {
   const { code } = req.body;
+
   const verified = speakeasy.totp.verify({
     secret: req.session.twoFactorSecret,
     encoding: 'base32',
@@ -140,52 +148,15 @@ app.post('/verify-2fa', (req, res) => {
   }
 });
 
+// ATIVAR 2FA
 app.get('/enable-2fa', async (req, res) => {
   if (!req.session.email) return res.redirect('/');
 
   try {
     const secret = speakeasy.generateSecret({ name: `SMAI (${req.session.email})` });
     req.session.twoFactorTempSecret = secret.base32;
+
     const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url);
     res.render('enable-2fa', { mensagem: null, qrCodeUrl });
   } catch (err) {
-    console.error('Erro ao gerar QR code 2FA:', err);
-    res.status(500).send('Erro ao gerar QR code para 2FA');
-  }
-});
-
-app.post('/enable-2fa', async (req, res) => {
-  if (!req.session.email) return res.redirect('/');
-  const { token } = req.body;
-  const tempSecret = req.session.twoFactorTempSecret;
-
-  if (!tempSecret) return res.redirect('/enable-2fa');
-
-  const verified = speakeasy.totp.verify({
-    secret: tempSecret,
-    encoding: 'base32',
-    token: token,
-    window: 1
-  });
-
-  if (verified) {
-    try {
-      await db.execute('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE email = ?', [tempSecret, req.session.email]);
-      delete req.session.twoFactorTempSecret;
-      res.render('enable-2fa', { mensagem: 'Autenticação de dois fatores ativada com sucesso.', qrCodeUrl: null });
-    } catch (err) {
-      console.error('Erro ao salvar 2FA no banco:', err);
-      res.status(500).send('Erro ao salvar 2FA');
-    }
-  } else {
-    const otpauthUrl = speakeasy.otpauthURL({
-      secret: tempSecret,
-      label: `SMAI (${req.session.email})`,
-      encoding: 'base32'
-    });
-    const qrCodeUrl = await qrcode.toDataURL(otpauthUrl);
-    res.render('enable-2fa', { mensagem: 'Código inválido. Tente novamente.', qrCodeUrl });
-  }
-});
-
-app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
+    console.error('Erro ao gerar QR Code:', err);
