@@ -3,13 +3,14 @@ const session = require('express-session');
 const bodyParser = require('body-parser');
 const path = require('path');
 const axios = require('axios');
-const db = require('./mysql'); // arquivo com conexão mysql2/promise
+const db = require('./mysql'); // conexão com MySQL
 
 const app = express();
-const port = process.env.PORT || 3000; 
-const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622';
-// Chave secreta do Google reCAPTCHA que você forneceu
-const recaptchaSecretKey = '6Leu9H4rAAAAAHlL0O_fcrJe4i1AgaXW_tPjduUs';
+const port = process.env.PORT || 3000;
+
+// Suas chaves
+const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // Mailboxlayer
+const recaptchaSecret = '6Leu9H4rAAAAAHlL0O_fcrJe4i1AgaXW_tPjduUs'; // reCAPTCHA (SECRET KEY)
 
 // Sessão
 app.use(session({
@@ -20,70 +21,79 @@ app.use(session({
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Configuração das Views (EJS) para renderizar arquivos .html
-app.engine('html', require('ejs').renderFile);
-app.set('view engine', 'html');
+// Views e estáticos
+app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-// Rota da página inicial
+// Página inicial
 app.get('/', (req, res) => {
   if (req.session.email) {
     console.log('Usuário logado:', req.session.email);
     return res.render('logado');
   }
-  
-  // Envia um objeto com 'query' e 'erro' para a view.
+
   res.render('index', {
-    query: req.query,
-    erro: null
+    erro: null,
+    query: req.query || {}
   });
 });
 
-// Rota de Login com validação reCAPTCHA
+// Login
 app.post('/', async (req, res) => {
-  const { email, password } = req.body;
-  const recaptchaToken = req.body['g-recaptcha-response'];
+  const { email, password, 'g-recaptcha-response': captcha } = req.body;
 
+  // Verifica se marcou o captcha
+  if (!captcha) {
+    return res.render('index', {
+      erro: 'Por favor, confirme que você não é um robô.',
+      query: {}
+    });
+  }
+
+  // Verifica com o Google reCAPTCHA
   try {
-    // 1. Validar o token do reCAPTCHA com a API do Google
-    const verificationURL = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecretKey}&response=${recaptchaToken}`;
-    const googleResponse = await axios.post(verificationURL);
-    const { success } = googleResponse.data;
+    const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`;
+    const response = await axios.post(verifyUrl, null, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
 
-    if (!success) {
-      // Se a verificação falhar, renderiza a página de login com um erro.
-      return res.render('index', { 
-        erro: 'Falha na verificação do reCAPTCHA. Tente novamente.', 
-        query: req.query 
+    const data = response.data;
+
+    if (!data.success) {
+      return res.render('index', {
+        erro: 'Falha na verificação do reCAPTCHA.',
+        query: {}
       });
     }
 
-    // 2. Se o reCAPTCHA for válido, prossegue com a lógica de login
-    const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
+    // Validação de login
+    const [rows] = await db.execute(
+      'SELECT * FROM users WHERE email = ? AND password = ?', [email, password]
+    );
 
     if (rows.length > 0) {
       req.session.email = rows[0].email;
       return res.render('logado');
     } else {
-      // Se o login falhar, renderiza com a mensagem de erro apropriada.
       return res.render('index', {
         erro: 'E-mail ou senha incorretos',
-        query: req.query
+        query: {}
       });
     }
+
   } catch (err) {
-    console.error('Erro no processo de login:', err.message);
-    res.status(500).send('Erro interno no servidor.');
+    console.error('Erro ao verificar reCAPTCHA:', err.message);
+    return res.status(500).send('Erro ao verificar reCAPTCHA');
   }
 });
 
-// Rota da página de cadastro
+// Página de cadastro
 app.get('/register', (req, res) => {
   res.render('register');
 });
 
-// Rota de Cadastro
+// Cadastro
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
 
@@ -104,10 +114,9 @@ app.post('/register', async (req, res) => {
 
     const data = response.data;
     if (!data.format_valid || !data.mx_found || data.disposable) {
-        return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
+      return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
     }
 
-    // Inserir no MySQL
     try {
       await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
       res.redirect('/?cadastro=sucesso');
@@ -125,7 +134,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Rota de Logout
+// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {

@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <title>Login</title>
   <link rel="stylesheet" href="/public/style.css">
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script> <!-- reCAPTCHA -->
   <style>
-    /* Estilos para as mensagens de sucesso e erro */
     .mensagem-sucesso {
       padding: 10px;
       margin-bottom: 15px;
@@ -24,15 +24,7 @@
       border: 1px solid #f5c6cb;
       text-align: center;
     }
-    /* Estilo para centralizar o reCAPTCHA */
-    .g-recaptcha {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
   </style>
-  <!-- 1. Script do Google reCAPTCHA -->
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
 
@@ -48,9 +40,9 @@
     <h2>Login</h2>
     <input type="email" name="email" placeholder="E-mail" required><br>
     <input type="password" name="password" placeholder="Senha" required><br>
-    
-    <!-- 2. Widget do reCAPTCHA com a sua chave -->
-    <div class="g-recaptcha" data-sitekey="6Leu9H4rAAAAAKL1I7ilFxLvpcnK0ZoWeN5R1wrP"></div>
+
+    <!-- Aqui entra o reCAPTCHA -->
+    <div class="g-recaptcha" data-sitekey="6Leu9H4rAAAAAKL1I7ilFxLvpcnK0ZoWeN5R1wrP"></div><br>
 
     <button type="submit">Entrar</button>
     <p>Não tem conta? <a href="./register">Cadastre-se</a></p>
