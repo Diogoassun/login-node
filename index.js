@@ -3,11 +3,8 @@ const session = require('express-session');
 const bodyParser = require('body-parser');
 const path = require('path');
 const axios = require('axios');
-const db = require('./mysql');
+const db = require('./mysql'); // seu módulo de conexão MySQL
 const nodemailer = require('nodemailer');
-const crypto = require('crypto');
-const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -48,13 +45,15 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-app.get('/', async (req, res) => {
+// Rota home/login
+app.get('/', (req, res) => {
   if (req.session.email) {
     return res.render('logado', { email: req.session.email });
   }
   res.render('index', { erro: null, query: req.query || {} });
 });
 
+// Login POST
 app.post('/', async (req, res) => {
   const { email, password, 'g-recaptcha-response': captcha } = req.body;
   if (!captcha) return res.render('index', { erro: 'Por favor, confirme que você não é um robô.', query: {} });
@@ -67,11 +66,17 @@ app.post('/', async (req, res) => {
     const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
     if (rows.length > 0) {
       const user = rows[0];
-      if (user.two_factor_enabled && user.two_factor_secret) {
+
+      if (user.two_factor_enabled) {
+        const codigo = Math.floor(100000 + Math.random() * 900000);
         req.session.pendingUser = user.email;
-        req.session.twoFactorSecret = user.two_factor_secret;
+        req.session.verificationCode = codigo;
+        req.session.verificationExpires = Date.now() + 5 * 60 * 1000; // 5 minutos
+
+        await enviarEmail(user.email, 'Código de Verificação 2FA', `Seu código de verificação é: ${codigo}`);
         return res.redirect('/verify-2fa');
       }
+
       req.session.email = user.email;
       return res.render('logado', { email: user.email });
     } else {
@@ -83,8 +88,10 @@ app.post('/', async (req, res) => {
   }
 });
 
+// Rota registro GET
 app.get('/register', (req, res) => res.render('register'));
 
+// Registro POST
 app.post('/register', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).send('Preencha o e-mail e a senha');
@@ -109,6 +116,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
+// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) return res.status(500).send('Não foi possível fazer logout.');
@@ -116,90 +124,40 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Página para digitar código 2FA
 app.get('/verify-2fa', (req, res) => {
-  if (!req.session.pendingUser || !req.session.twoFactorSecret) return res.redirect('/');
+  if (!req.session.pendingUser) return res.redirect('/');
   res.render('verify-2fa', { erro: null });
 });
 
+// Verificar código 2FA
 app.post('/verify-2fa', (req, res) => {
   const { code } = req.body;
-  const verified = speakeasy.totp.verify({
-    secret: req.session.twoFactorSecret,
-    encoding: 'base32',
-    token: code,
-    window: 1
-  });
 
-  if (verified) {
+  if (!req.session.verificationCode || Date.now() > req.session.verificationExpires) {
+    return res.render('verify-2fa', { erro: 'Código expirado. Faça login novamente.' });
+  }
+
+  if (parseInt(code) === req.session.verificationCode) {
     req.session.email = req.session.pendingUser;
     delete req.session.pendingUser;
-    delete req.session.twoFactorSecret;
-    res.render('logado', { email: req.session.email });
+    delete req.session.verificationCode;
+    delete req.session.verificationExpires;
+    return res.render('logado', { email: req.session.email });
   } else {
-    res.render('verify-2fa', { erro: 'Código inválido. Tente novamente.' });
+    return res.render('verify-2fa', { erro: 'Código incorreto. Tente novamente.' });
   }
 });
 
+// Ativar 2FA simples (marcar no banco)
 app.get('/enable-2fa', async (req, res) => {
   if (!req.session.email) return res.redirect('/');
-
   try {
-    const secret = speakeasy.generateSecret({ name: `SMAI (${req.session.email})` });
-    req.session.twoFactorTempSecret = secret.base32;
-    const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url);
-    res.render('enable-2fa', { mensagem: null, qrCodeUrl });
+    await db.execute('UPDATE users SET two_factor_enabled = 1 WHERE email = ?', [req.session.email]);
+    res.render('enable-2fa', { mensagem: '2FA ativado com sucesso.' });
   } catch (err) {
-    console.error('Erro ao gerar QR code 2FA:', err);
-    res.status(500).send('Erro ao gerar QR code para 2FA');
-  }
-});
-
-app.post('/enable-2fa', async (req, res) => {
-  if (!req.session.email) return res.redirect('/');
-  const { token } = req.body;
-  const tempSecret = req.session.twoFactorTempSecret;
-
-  if (!tempSecret) return res.redirect('/enable-2fa');
-
-  const verified = speakeasy.totp.verify({
-    secret: tempSecret,
-    encoding: 'base32',
-    token: token,
-    window: 1
-  });
-
-   if (verified) {
-    try {
-      await db.execute('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE email = ?', [tempSecret, req.session.email]);
-      delete req.session.twoFactorTempSecret;
-
-      // ✅ Sucesso — mostra mensagem sem QR
-      return res.render('enable-2fa', {
-        mensagem: 'Autenticação de dois fatores ativada com sucesso.',
-        qrCodeUrl: null
-      });
-    } catch (err) {
-      console.error('Erro ao salvar 2FA no banco:', err);
-      return res.status(500).send('Erro ao salvar 2FA');
-    }
-  } else {
-    // ❌ Código inválido — renderiza novamente com o QR code
-    try {
-      const otpauthUrl = speakeasy.otpauthURL({
-        secret: tempSecret,
-        label: `SMAI (${req.session.email})`,
-        encoding: 'base32'
-      });
-      const qrCodeUrl = await qrcode.toDataURL(otpauthUrl);
-
-      return res.render('enable-2fa', {
-        mensagem: 'Código inválido. Tente novamente.',
-        qrCodeUrl
-      });
-    } catch (err) {
-      console.error('Erro ao gerar QR code:', err);
-      return res.status(500).send('Erro ao gerar QR code para 2FA');
-    }
+    console.error('Erro ao ativar 2FA:', err);
+    res.status(500).send('Erro ao ativar 2FA');
   }
 });
 

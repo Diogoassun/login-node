@@ -1,27 +1,18 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>Ativar Autenticação de Dois Fatores</title>
-    <link rel="stylesheet" href="/public/style.css">
+  <meta charset="UTF-8" />
+  <title>Ativar 2FA</title>
 </head>
 <body>
-    <form action="/enable-2fa" method="POST" style="text-align: center;">
-        <h2>Ativar 2FA</h2>
-        <p>Escaneie o QR Code abaixo com seu aplicativo de autenticação (Google Authenticator, Authy, etc.).</p>
-        
-        <!-- O QR Code será inserido aqui pelo EJS -->
-        <img src="<%= qrCodeUrl %>" alt="QR Code para 2FA">
-
-        <p style="margin-top: 20px;">Depois, insira o código de 6 dígitos gerado pelo aplicativo para confirmar.</p>
-        
-        <input type="text" name="token" placeholder="Código de 6 dígitos" required autocomplete="off" style="text-align: center;">
-        
-        <button type="submit">Ativar e Verificar</button>
-
-        <% if (typeof erro !== 'undefined' && erro) { %>
-            <p style="color: #ffcccc; margin-top: 15px;"><%= erro %></p>
-        <% } %>
-    </form>
+  <h1>Ativar Autenticação de Dois Fatores</h1>
+  <% if (mensagem) { %>
+    <p style="color:green;"><%= mensagem %></p>
+  <% } %>
+  <p>Para aumentar a segurança da sua conta, ative a autenticação por código enviado no e-mail.</p>
+  <form method="GET" action="/enable-2fa">
+    <button type="submit">Ativar 2FA</button>
+  </form>
+  <p><a href="/">Voltar</a></p>
 </body>
 </html>
