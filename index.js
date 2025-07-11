@@ -6,6 +6,8 @@ const axios = require('axios');
 const db = require('./mysql');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const speakeasy = require('speakeasy');
+const qrcode = require('qrcode');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -160,6 +162,78 @@ app.post('/enable-2fa', async (req, res) => {
   } catch (err) {
     console.error('Erro ao ativar 2FA:', err);
     res.status(500).send('Erro ao ativar autenticação de dois fatores.');
+  }
+});
+
+app.get('/enable-2fa', async (req, res) => {
+  if (!req.session.email) return res.redirect('/');
+
+  try {
+    // Gera secret para o usuário
+    const secret = speakeasy.generateSecret({
+      name: `SMAI (${req.session.email})`
+    });
+
+    // Salva secret temporariamente na sessão (ou no banco, para confirmar depois)
+    req.session.twoFactorTempSecret = secret.base32;
+
+    // Gera URL do QR code
+    const otpauthUrl = secret.otpauth_url;
+
+    // Gera QR code em base64 para mostrar na página
+    const qrCodeUrl = await qrcode.toDataURL(otpauthUrl);
+
+    res.render('enable-2fa', { mensagem: null, qrCodeUrl });
+  } catch (err) {
+    console.error('Erro ao gerar QR code 2FA:', err);
+    res.status(500).send('Erro ao gerar QR code para 2FA');
+  }
+});
+
+// Rota POST para confirmar o código de 2FA inserido pelo usuário
+app.post('/enable-2fa', async (req, res) => {
+  if (!req.session.email) return res.redirect('/');
+  const { token } = req.body;
+
+  const tempSecret = req.session.twoFactorTempSecret;
+  if (!tempSecret) return res.redirect('/enable-2fa');
+
+  // Verifica o token com o secret temporário
+  const verified = speakeasy.totp.verify({
+    secret: tempSecret,
+    encoding: 'base32',
+    token: token,
+    window: 1
+  });
+
+  if (verified) {
+    // Salva no banco o secret definitivo e ativa 2FA
+    try {
+      await db.execute('UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE email = ?', [tempSecret, req.session.email]);
+
+      // Remove secret temporário da sessão
+      delete req.session.twoFactorTempSecret;
+
+      res.render('enable-2fa', { mensagem: 'Autenticação de dois fatores ativada com sucesso.', qrCodeUrl: null });
+    } catch (err) {
+      console.error('Erro ao salvar 2FA no banco:', err);
+      res.status(500).send('Erro ao salvar 2FA');
+    }
+  } else {
+    // Token inválido, volta para a página mostrando o QR code para tentar de novo
+    try {
+      const otpauthUrl = speakeasy.otpauthURL({
+        secret: tempSecret,
+        label: `SMAI (${req.session.email})`,
+        encoding: 'base32'
+      });
+      const qrCodeUrl = await qrcode.toDataURL(otpauthUrl);
+
+      res.render('enable-2fa', { mensagem: 'Código inválido. Tente novamente.', qrCodeUrl });
+    } catch (err) {
+      console.error('Erro ao gerar QR code:', err);
+      res.status(500).send('Erro no servidor');
+    }
   }
 });
 
