@@ -4,9 +4,35 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const axios = require('axios');
 const db = require('./mysql'); // conexão com MySQL
+const nodemailer = require('nodemailer');
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Configuração do Nodemailer (Gmail com senha de app)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'seuemail@gmail.com', // seu Gmail
+    pass: 'hwbk edim tmwb lxmv' // sua senha de app
+  }
+});
+
+// Função para enviar e-mail
+async function enviarEmail(destinatario, assunto, mensagem) {
+  try {
+    const info = await transporter.sendMail({
+      from: '"Meu Site" <seuemail@gmail.com>',
+      to: destinatario,
+      subject: assunto,
+      text: mensagem
+    });
+    console.log('E-mail enviado: %s', info.messageId);
+  } catch (erro) {
+    console.error('Erro ao enviar e-mail:', erro.message);
+  }
+}
+
 
 // Suas chaves
 const mailboxApiKey = 'e37b7fc9c000be253433294d102f9622'; // Mailboxlayer
@@ -119,7 +145,11 @@ app.post('/register', async (req, res) => {
 
     try {
       await db.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, password]);
-      res.redirect('/?cadastro=sucesso');
+
+        // Envia e-mail de boas-vindas
+        await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
+
+        res.redirect('/?cadastro=sucesso');
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') {
         return res.status(409).send('Este e-mail já está cadastrado');
