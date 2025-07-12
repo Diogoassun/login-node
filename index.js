@@ -54,14 +54,14 @@ app.get('/', (req, res) => {
 });
 
 // Login POST
-app.post('/api/login', async (req, res) => {
+app.post('/', async (req, res) => {
   const { email, password, 'g-recaptcha-response': captcha } = req.body;
-  if (!captcha) return res.json({ success: false, message: 'Por favor, confirme que você não é um robô.' });
+  if (!captcha) return res.render('index', { erro: 'Por favor, confirme que você não é um robô.', query: {} });
 
   try {
     const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`;
     const response = await axios.post(verifyUrl);
-    if (!response.data.success) return res.json({ success: false, message: 'Falha na verificação do reCAPTCHA.' });
+    if (!response.data.success) return res.render('index', { erro: 'Falha na verificação do reCAPTCHA.', query: {} });
 
     const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
     if (rows.length > 0) {
@@ -71,20 +71,20 @@ app.post('/api/login', async (req, res) => {
         const codigo = Math.floor(100000 + Math.random() * 900000);
         req.session.pendingUser = user.email;
         req.session.verificationCode = codigo;
-        req.session.verificationExpires = Date.now() + 5 * 60 * 1000;
+        req.session.verificationExpires = Date.now() + 5 * 60 * 1000; // 5 minutos
 
         await enviarEmail(user.email, 'Código de Verificação 2FA', `Seu código de verificação é: ${codigo}`);
-        return res.json({ success: true, redirect: '/verify-2fa' });
+        return res.redirect('/verify-2fa');
       }
 
       req.session.email = user.email;
-      return res.json({ success: true, redirect: '/' });
+      return res.render('logado', { email: user.email });
     } else {
-      return res.json({ success: false, message: 'E-mail ou senha incorretos' });
+      return res.render('index', { erro: 'E-mail ou senha incorretos', query: {} });
     }
   } catch (err) {
-    console.error('Erro ao verificar login:', err.message);
-    return res.json({ success: false, message: 'Erro interno no servidor.' });
+    console.error('Erro ao verificar reCAPTCHA:', err.message);
+    return res.status(500).send('Erro ao verificar reCAPTCHA');
   }
 });
 
