@@ -190,5 +190,117 @@ app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
 
 
 app.get('/forgot', (req, res) => {
-  res.render('forgot', { mensagem: null });
+  res.render('forgot', { erro: null, sucesso: null });
+});
+
+// Adicione o módulo 'crypto' no topo do seu index.js
+const crypto = require('crypto');
+
+// ... seu código existente ...
+
+// ROTA PARA PROCESSAR O PEDIDO DE REDEFINIÇÃO DE SENHA
+app.post('/forgot', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    // 1. Encontra o usuário pelo e-mail
+    const [rows] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+
+    // Medida de segurança: não informe se o e-mail foi encontrado ou não.
+    // Apenas mostre uma mensagem genérica para evitar que descubram e-mails cadastrados.
+    if (rows.length === 0) {
+      return res.render('forgot', { 
+        erro: null, 
+        sucesso: 'Se este e-mail estiver cadastrado, um link de redefinição será enviado.' 
+      });
+    }
+    const user = rows[0];
+
+    // 2. Gera um token seguro e aleatório
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpires = Date.now() + 3600000; // Token expira em 1 hora
+
+    // 3. Salva o token e a data de expiração no banco de dados
+    // (Você precisará adicionar as colunas `reset_token` e `reset_token_expires` na sua tabela `users`)
+    await db.execute(
+      'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+      [resetToken, resetTokenExpires, user.id]
+    );
+
+    // 4. Cria o link de redefinição e envia por e-mail
+    const resetUrl = `http://localhost:${port}/reset/${resetToken}`;
+    const mensagemEmail = `Você solicitou a redefinição de senha. Por favor, clique no link a seguir para criar uma nova senha: ${resetUrl}\n\nO link é válido por 1 hora.\n\nSe você não fez esta solicitação, ignore este e-mail.`;
+
+    await enviarEmail(user.email, 'Redefinição de Senha', mensagemEmail);
+
+    // 5. Renderiza a página com a mensagem de sucesso
+    res.render('forgot', { 
+      erro: null, 
+      sucesso: 'Se este e-mail estiver cadastrado, um link de redefinição será enviado.' 
+    });
+
+  } catch (err) {
+    console.error('Erro no processo /forgot:', err);
+    res.render('forgot', { 
+      sucesso: null, 
+      erro: 'Ocorreu um erro interno. Por favor, tente novamente.' 
+    });
+  }
+});
+
+// ROTA PARA MOSTRAR O FORMULÁRIO DE NOVA SENHA
+app.get('/reset/:token', async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?',
+      [token, Date.now()]
+    );
+
+    if (rows.length === 0) {
+      return res.send('Token de redefinição inválido ou expirado.');
+    }
+
+    res.render('reset', { erro: null, token: token });
+
+  } catch (err) {
+    console.error('Erro no GET /reset/:token:', err);
+    res.send('Ocorreu um erro.');
+  }
+});
+
+// ROTA PARA SALVAR A NOVA SENHA
+app.post('/reset/:token', async (req, res) => {
+  const { token } = req.params;
+  const { password, confirmPassword } = req.body;
+
+  if (password !== confirmPassword) {
+    return res.render('reset', { erro: 'As senhas não coincidem.', token: token });
+  }
+
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?',
+      [token, Date.now()]
+    );
+
+    if (rows.length === 0) {
+      return res.render('reset', { erro: 'Token de redefinição inválido ou expirado.', token: token });
+    }
+
+    const user = rows[0];
+
+    // Atualiza a senha e limpa os campos de token
+    await db.execute(
+      'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+      [password, user.id] // Lembre-se de usar HASH na senha em um projeto real!
+    );
+
+    res.send('Sua senha foi redefinida com sucesso! Você já pode <a href="/">fazer login</a>.');
+
+  } catch (err) {
+    console.error('Erro no POST /reset/:token:', err);
+    res.render('reset', { erro: 'Ocorreu um erro ao redefinir a senha.', token: token });
+  }
 });
