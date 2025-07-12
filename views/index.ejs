@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Login</title>
   <link rel="stylesheet" href="/public/style.css">
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script> <!-- reCAPTCHA -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <style>
     .mensagem-sucesso {
       padding: 10px;
@@ -24,24 +24,19 @@
       border: 1px solid #f5c6cb;
       text-align: center;
     }
+    input.erro {
+      border: 2px solid red;
+    }
   </style>
 </head>
 <body>
+  <div id="mensagem" class="mensagem-erro" style="display: none;"></div>
 
-  <% if (typeof query !== 'undefined' && query.cadastro === 'sucesso') { %>
-    <p class="mensagem-sucesso">Cadastro realizado com sucesso! Faça login.</p>
-  <% } %>
-
-  <% if (typeof erro !== 'undefined' && erro) { %>
-    <p class="mensagem-erro"><%= erro %></p>
-  <% } %>
-
-  <form action="/" method="POST">
+  <form id="loginForm">
     <h2>Login</h2>
-    <input type="email" name="email" placeholder="E-mail" required><br>
-    <input type="password" name="password" placeholder="Senha" required><br>
+    <input type="email" name="email" id="email" placeholder="E-mail" required><br>
+    <input type="password" name="password" id="password" placeholder="Senha" required><br>
 
-    <!-- Aqui entra o reCAPTCHA -->
     <div class="g-recaptcha" data-sitekey="6Leu9H4rAAAAAKL1I7ilFxLvpcnK0ZoWeN5R1wrP"></div><br>
 
     <button type="submit">Entrar</button>
@@ -49,5 +44,46 @@
     <p><a href="/forgot">Esqueci minha senha</a></p>
   </form>
 
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      const mensagem = document.getElementById('mensagem');
+
+      emailInput.classList.remove('erro');
+      passwordInput.classList.remove('erro');
+      mensagem.style.display = 'none';
+
+      const captchaResponse = grecaptcha.getResponse();
+      if (!captchaResponse) {
+        mensagem.style.display = 'block';
+        mensagem.textContent = 'Por favor, confirme que você não é um robô.';
+        return;
+      }
+
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: emailInput.value,
+          password: passwordInput.value,
+          'g-recaptcha-response': captchaResponse
+        })
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        window.location.href = result.redirect || '/';
+      } else {
+        mensagem.style.display = 'block';
+        mensagem.textContent = result.message;
+        emailInput.classList.add('erro');
+        passwordInput.classList.add('erro');
+      }
+    });
+  </script>
 </body>
 </html>
