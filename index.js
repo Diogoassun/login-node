@@ -187,3 +187,8 @@ app.get('/enable-2fa', async (req, res) => {
 });
 
 app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
+
+
+app.get('/forgot', (req, res) => {
+  res.render('forgot');
+});
