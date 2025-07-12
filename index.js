@@ -190,10 +190,5 @@ app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
 
 
 app.get('/forgot', (req, res) => {
-  try {
-    res.render('forgot');
-  } catch (err) {
-    console.error('Erro ao renderizar /forgot:', err.message);
-    res.status(500).send('Erro interno ao carregar a página de recuperação de senha.');
-  }
+  res.render('forgot', { mensagem: null });
 });
