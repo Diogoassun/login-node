@@ -55,29 +55,18 @@ app.get('/', (req, res) => {
 
 // Login POST
 app.post('/', async (req, res) => {
-  // O body agora virá como JSON do fetch
   const { email, password, 'g-recaptcha-response': captcha } = req.body;
-
-  // Validação do reCAPTCHA
-  if (!captcha) {
-    return res.status(400).json({ success: false, message: 'Por favor, confirme que você não é um robô.' });
-  }
+  if (!captcha) return res.render('index', { erro: 'Por favor, confirme que você não é um robô.', query: {} });
 
   try {
     const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${captcha}`;
     const response = await axios.post(verifyUrl);
+    if (!response.data.success) return res.render('index', { erro: 'Falha na verificação do reCAPTCHA.', query: {} });
 
-    if (!response.data.success) {
-      return res.status(400).json({ success: false, message: 'Falha na verificação do reCAPTCHA. Tente novamente.' });
-    }
-
-    // Validação do usuário
     const [rows] = await db.execute('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
-    
     if (rows.length > 0) {
       const user = rows[0];
 
-      // Se 2FA estiver ativado
       if (user.two_factor_enabled) {
         const codigo = Math.floor(100000 + Math.random() * 900000);
         req.session.pendingUser = user.email;
@@ -85,31 +74,18 @@ app.post('/', async (req, res) => {
         req.session.verificationExpires = Date.now() + 5 * 60 * 1000; // 5 minutos
 
         await enviarEmail(user.email, 'Código de Verificação 2FA', `Seu código de verificação é: ${codigo}`);
-        
-        // Informa ao frontend para onde redirecionar
-        return res.status(200).json({ success: true, redirectUrl: '/verify-2fa' });
+        return res.redirect('/verify-2fa');
       }
 
-      // Login bem-sucedido sem 2FA
       req.session.email = user.email;
-      // Informa ao frontend para onde redirecionar
-      return res.status(200).json({ success: true, redirectUrl: '/logado' }); // Crie uma rota GET /logado se não existir
+      return res.render('logado', { email: user.email });
     } else {
-      // Credenciais incorretas
-      return res.status(401).json({ success: false, message: 'E-mail ou senha incorretos.' });
+      return res.render('index', { erro: 'E-mail ou senha incorretos', query: {} });
     }
   } catch (err) {
-    console.error('Erro no processo de login:', err.message);
-    return res.status(500).json({ success: false, message: 'Erro interno no servidor. Tente mais tarde.' });
+    console.error('Erro ao verificar reCAPTCHA:', err.message);
+    return res.status(500).send('Erro ao verificar reCAPTCHA');
   }
-});
-
-// Adicione esta nova rota GET para a página de logado
-app.get('/logado', (req, res) => {
-  if (req.session.email) {
-    return res.render('logado', { email: req.session.email });
-  }
-  res.redirect('/');
 });
 
 // Rota registro GET
