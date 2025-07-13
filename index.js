@@ -344,7 +344,7 @@ app.post('/reset/:token', async (req, res) => {
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Atualiza a senha e limpa o token para que não possa ser usado novamente diogo
+        // Atualiza a senha e limpa o token para que não possa ser usado novamente
         await db.execute(
             'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE reset_token = ?',
             [hashedPassword, token]
