@@ -230,39 +230,65 @@ app.get('/forgot', (req, res) => {
 // ROTA POST: Lida com a solicitação de redefinição
 app.post('/forgot', async (req, res) => {
     const { email } = req.body;
+    console.log('\n--- NOVA SOLICITAÇÃO EM /forgot ---');
+    console.log(`1. E-mail recebido do formulário: ${email}`);
+
+    if (!email) {
+        console.log('ERRO: Nenhum e-mail foi enviado no formulário.');
+        return res.render('forgot', { sucesso: null, erro: 'Por favor, insira um e-mail.' });
+    }
 
     try {
+        // Passo 2: Gerar o hash do e-mail para procurar no banco
         const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-        const [rows] = await db.execute('SELECT * FROM users WHERE email_hash = ?', [emailHash]);
+        console.log(`2. Hash gerado para o e-mail: ${emailHash}`);
 
+        // Passo 3: Tentar encontrar o utilizador no banco de dados
+        console.log('3. A procurar o utilizador no banco de dados...');
+        const [rows] = await db.execute('SELECT id, email FROM users WHERE email_hash = ?', [emailHash]);
+
+        // Passo 4: Analisar o resultado da busca
         if (rows.length === 0) {
-            // CORRIGIDO: usa 'sucesso' em vez de 'mensagem'
-            return res.render('forgot', { erro: null, sucesso: 'Se um usuário com este e-mail existir, um link de redefinição foi enviado.' });
+            console.log('4. RESULTADO: Nenhum utilizador encontrado com este hash de e-mail.');
+            console.log('   -> A execução será interrompida aqui, por isso o token fica NULL.');
+            // Mesmo que não encontre, enviamos uma mensagem genérica por segurança.
+            return res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
         }
+        
+        // Se o código chegou até aqui, o utilizador foi encontrado!
+        const user = rows[0];
+        console.log(`4. RESULTADO: Utilizador encontrado! ID: ${user.id}`);
 
+        // Passo 5: Gerar o token e a data de expiração
         const token = crypto.randomBytes(32).toString('hex');
-        const expires = new Date(Date.now() + 3600000);
+        const expires = new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' ');
+        console.log('5. Token e data de expiração gerados com sucesso.');
+        console.log(`   -> Token: ${token}`);
+        console.log(`   -> Expira em: ${expires}`);
 
+        // Passo 6: Tentar salvar o token no banco de dados
+        console.log('6. A tentar ATUALIZAR o token no banco de dados...');
         await db.execute(
-            'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE email_hash = ?',
-            [token, expires, emailHash]
+            'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+            [token, expires, user.id] // Usar o ID do utilizador é mais seguro e direto
         );
+        console.log('7. ATUALIZAÇÃO no banco de dados executada com sucesso!');
 
+        // Passo 7: Enviar o e-mail
         const resetLink = `http://${req.headers.host}/reset/${token}`;
-
+        console.log(`8. A enviar e-mail com o link: ${resetLink}`);
         await enviarEmail(
             email, 
             'Redefinição de Senha',
-            `Você solicitou uma redefinição de senha. Clique no link a seguir: ${resetLink}`
+            `Você solicitou uma redefinição de senha. Clique no link a seguir para criar uma nova senha: ${resetLink}`
         );
         
-        // CORRIGIDO: usa 'sucesso' em vez de 'mensagem'
-        res.render('forgot', { erro: null, sucesso: 'Se um usuário com este e-mail existir, um link de redefinição foi enviado.' });
+        res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
 
     } catch (err) {
-        console.error('Erro em /forgot:', err.message);
-        // CORRIGIDO: envia 'sucesso' como null
-        res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro. Tente novamente.' });
+        console.error('!!! ERRO CRÍTICO DENTRO DO BLOCO try...catch !!!');
+        console.error(err);
+        res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro interno. Tente novamente.' });
     }
 });
 
@@ -270,25 +296,32 @@ app.post('/forgot', async (req, res) => {
 // ROTA GET: Exibe o formulário para criar a nova senha
 app.get('/reset/:token', async (req, res) => {
     const { token } = req.params;
+    console.log('\n--- NOVA SOLICITAÇÃO EM /reset/:token ---');
+    console.log(`1. Token recebido da URL: ${token}`);
 
     try {
-        // Procura o usuário pelo token e verifica se ele não expirou
-        const [rows] = await db.execute(
-            'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > NOW()',
-            [token]
-        );
+        // CORREÇÃO: Usamos UTC_TIMESTAMP() em vez de NOW() para garantir que a comparação
+        // de fusos horários seja sempre correta, não importa onde o banco de dados esteja.
+        const sqlQuery = 'SELECT id, email FROM users WHERE reset_token = ? AND reset_token_expires > UTC_TIMESTAMP()';
+        
+        console.log('2. A procurar o utilizador no banco de dados com este token...');
+        console.log(`3. A executar a seguinte consulta SQL: ${sqlQuery}`);
+
+        const [rows] = await db.execute(sqlQuery, [token]);
 
         if (rows.length === 0) {
-            // Se o token não existe ou expirou, mostra um erro
+            console.log('4. RESULTADO: Nenhum utilizador encontrado. A consulta com UTC_TIMESTAMP() também falhou ou o token é inválido.');
             return res.status(400).send('O link de redefinição de senha é inválido ou expirou.');
         }
-
-        // Se o token for válido, renderiza a página de redefinição
+        
+        const user = rows[0];
+        console.log(`4. RESULTADO: SUCESSO! Token válido encontrado para o utilizador ID: ${user.id}`);
         res.render('reset', { erro: null });
 
     } catch (err) {
-        console.error('Erro em /reset/:token GET:', err.message);
-        res.status(500).send('Ocorreu um erro.');
+        console.error('!!! ERRO CRÍTICO na rota GET /reset/:token !!!');
+        console.error(err);
+        res.status(500).send('Ocorreu um erro interno.');
     }
 });
 
