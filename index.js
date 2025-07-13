@@ -239,17 +239,23 @@ app.post('/forgot', async (req, res) => {
 
         if (rows.length === 0) {
             console.log('2. Utilizador não encontrado.');
-            // A resposta é a mesma para não revelar se um e-mail existe ou não.
-            return res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
+            return res.render('forgot', {
+                erro: null,
+                sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.'
+            });
         }
-        
+
         const user = rows[0];
         console.log(`2. Utilizador encontrado! ID: ${user.id}`);
 
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' ');
 
-        // Usamos o pool diretamente. O driver mysql2/promise gerencia o autocommit.
+        // 🧪 Logs para depuração
+        console.log('TOKEN GERADO:', token);
+        console.log('EXPIRA EM:', expires);
+        console.log('ID DO USUÁRIO:', user.id);
+
         await db.execute(
             'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
             [token, expires, user.id]
@@ -258,18 +264,24 @@ app.post('/forgot', async (req, res) => {
 
         const resetLink = `http://${req.headers.host}/reset/${token}`;
         await enviarEmail(
-            email, 
+            email,
             'Redefinição de Senha',
             `Você solicitou uma redefinição de senha. Clique no link a seguir: ${resetLink}`
         );
         console.log('4. E-mail enviado.');
-        
-        res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
+
+        res.render('forgot', {
+            erro: null,
+            sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.'
+        });
 
     } catch (err) {
         console.error('!!! ERRO CRÍTICO EM /forgot !!!');
         console.error(err);
-        res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro interno. Tente novamente.' });
+        res.render('forgot', {
+            sucesso: null,
+            erro: 'Ocorreu um erro interno. Tente novamente.'
+        });
     }
 });
 
