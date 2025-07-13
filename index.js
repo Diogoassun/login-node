@@ -337,8 +337,7 @@ app.post('/reset/:token', async (req, res) => {
 
         // Verifica se as senhas coincidem
         if (password !== confirmPassword) {
-            // Passa o token para o template para evitar erro no EJS
-            return res.render('reset', { erro: 'As senhas não coincidem.', token });
+            return res.render('reset', { erro: 'As senhas não coincidem.' });
         }
 
         // Gera o hash da nova senha
@@ -359,7 +358,6 @@ app.post('/reset/:token', async (req, res) => {
         res.status(500).send('Ocorreu um erro ao redefinir a senha.');
     }
 });
-
 
 
 
