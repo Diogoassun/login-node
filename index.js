@@ -228,7 +228,7 @@ app.get('/forgot', (req, res) => {
 });
 
 // ROTA POST: Lida com a solicitação de redefinição
-pp.post('/forgot', async (req, res) => {
+app.post('/forgot', async (req, res) => {
     const { email } = req.body;
     console.log('\n--- NOVA SOLICITAÇÃO EM /forgot ---');
     console.log(`1. E-mail recebido: ${email}`);
