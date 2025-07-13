@@ -309,7 +309,7 @@ app.get('/reset/:token', async (req, res) => {
         
         const user = rows[0];
         console.log(`4. RESULTADO: SUCESSO! Token válido encontrado para o utilizador ID: ${user.id}`);
-        res.render('reset', { erro: null });
+        res.render('reset', { erro: null, token });
 
     } catch (err) {
         console.error('!!! ERRO CRÍTICO na rota GET /reset/:token !!!');
