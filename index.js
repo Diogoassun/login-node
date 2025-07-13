@@ -228,47 +228,33 @@ app.get('/forgot', (req, res) => {
 });
 
 // ROTA POST: Lida com a solicitação de redefinição
-app.post('/forgot', async (req, res) => {
+pp.post('/forgot', async (req, res) => {
     const { email } = req.body;
-    // Adquirimos uma conexão específica do pool para controlar a transação.
-    let connection; 
+    console.log('\n--- NOVA SOLICITAÇÃO EM /forgot ---');
+    console.log(`1. E-mail recebido: ${email}`);
 
     try {
-        // Passo 1: Obter uma conexão do pool.
-        connection = await db.getConnection();
-        console.log('--- NOVA SOLICITAÇÃO EM /forgot ---');
-        console.log(`1. Conexão com o banco de dados obtida.`);
-
         const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-        const [rows] = await connection.execute('SELECT id FROM users WHERE email_hash = ?', [emailHash]);
+        const [rows] = await db.execute('SELECT id FROM users WHERE email_hash = ?', [emailHash]);
 
         if (rows.length === 0) {
             console.log('2. Utilizador não encontrado.');
-            // Importante: libertar a conexão antes de sair.
-            connection.release();
+            // A resposta é a mesma para não revelar se um e-mail existe ou não.
             return res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
         }
         
         const user = rows[0];
         console.log(`2. Utilizador encontrado! ID: ${user.id}`);
 
-        // Passo 2: Iniciar a transação.
-        await connection.beginTransaction();
-        console.log('3. Transação iniciada.');
-
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' ');
 
-        // Passo 3: Executar o UPDATE dentro da transação.
-        await connection.execute(
+        // Usamos o pool diretamente. O driver mysql2/promise gerencia o autocommit.
+        await db.execute(
             'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
             [token, expires, user.id]
         );
-        console.log('4. Comando UPDATE executado.');
-
-        // Passo 4: Confirmar a transação para salvar permanentemente.
-        await connection.commit();
-        console.log('5. Transação confirmada (COMMIT). A alteração está salva!');
+        console.log('3. Comando UPDATE executado.');
 
         const resetLink = `http://${req.headers.host}/reset/${token}`;
         await enviarEmail(
@@ -276,28 +262,14 @@ app.post('/forgot', async (req, res) => {
             'Redefinição de Senha',
             `Você solicitou uma redefinição de senha. Clique no link a seguir: ${resetLink}`
         );
-        console.log('6. E-mail enviado.');
+        console.log('4. E-mail enviado.');
         
         res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
 
     } catch (err) {
-        console.error('!!! ERRO CRÍTICO !!!');
+        console.error('!!! ERRO CRÍTICO EM /forgot !!!');
         console.error(err);
-        
-        // Se algo der errado, desfazemos a transação.
-        if (connection) {
-            await connection.rollback();
-            console.log('Transação desfeita (ROLLBACK).');
-        }
-
         res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro interno. Tente novamente.' });
-
-    } finally {
-        // Passo final e crucial: sempre libertar a conexão de volta para o pool.
-        if (connection) {
-            connection.release();
-            console.log('7. Conexão com o banco de dados libertada.');
-        }
     }
 });
 
