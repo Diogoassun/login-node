@@ -218,4 +218,121 @@ app.get('/enable-2fa', async (req, res) => {
   }
 });
 
+
+// --- NOVAS ROTAS PARA REDEFINIÇÃO DE SENHA ---
+
+// ROTA GET: Exibe o formulário para solicitar a redefinição
+app.get('/forgot', (req, res) => {
+    // Agora enviamos 'erro' e 'sucesso', que é o que o template espera.
+    res.render('forgot', { erro: null, sucesso: null });
+});
+
+// ROTA POST: Lida com a solicitação de redefinição
+app.post('/forgot', async (req, res) => {
+    const { email } = req.body;
+
+    try {
+        const emailHash = crypto.createHash('sha256').update(email).digest('hex');
+        const [rows] = await db.execute('SELECT * FROM users WHERE email_hash = ?', [emailHash]);
+
+        if (rows.length === 0) {
+            // CORRIGIDO: usa 'sucesso' em vez de 'mensagem'
+            return res.render('forgot', { erro: null, sucesso: 'Se um usuário com este e-mail existir, um link de redefinição foi enviado.' });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 3600000);
+
+        await db.execute(
+            'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE email_hash = ?',
+            [token, expires, emailHash]
+        );
+
+        const resetLink = `http://${req.headers.host}/reset/${token}`;
+
+        await enviarEmail(
+            email, 
+            'Redefinição de Senha',
+            `Você solicitou uma redefinição de senha. Clique no link a seguir: ${resetLink}`
+        );
+        
+        // CORRIGIDO: usa 'sucesso' em vez de 'mensagem'
+        res.render('forgot', { erro: null, sucesso: 'Se um usuário com este e-mail existir, um link de redefinição foi enviado.' });
+
+    } catch (err) {
+        console.error('Erro em /forgot:', err.message);
+        // CORRIGIDO: envia 'sucesso' como null
+        res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro. Tente novamente.' });
+    }
+});
+
+
+// ROTA GET: Exibe o formulário para criar a nova senha
+app.get('/reset/:token', async (req, res) => {
+    const { token } = req.params;
+
+    try {
+        // Procura o usuário pelo token e verifica se ele não expirou
+        const [rows] = await db.execute(
+            'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > NOW()',
+            [token]
+        );
+
+        if (rows.length === 0) {
+            // Se o token não existe ou expirou, mostra um erro
+            return res.status(400).send('O link de redefinição de senha é inválido ou expirou.');
+        }
+
+        // Se o token for válido, renderiza a página de redefinição
+        res.render('reset', { erro: null });
+
+    } catch (err) {
+        console.error('Erro em /reset/:token GET:', err.message);
+        res.status(500).send('Ocorreu um erro.');
+    }
+});
+
+
+// ROTA POST: Salva a nova senha
+app.post('/reset/:token', async (req, res) => {
+    const { token } = req.params;
+    const { password, confirmPassword } = req.body;
+
+    try {
+        // Repete a verificação do token para garantir a segurança
+        const [rows] = await db.execute(
+            'SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > NOW()',
+            [token]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).send('O link de redefinição de senha é inválido ou expirou.');
+        }
+
+        // Verifica se as senhas coincidem
+        if (password !== confirmPassword) {
+            return res.render('reset', { erro: 'As senhas não coincidem.' });
+        }
+
+        // Gera o hash da nova senha
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // Atualiza a senha e limpa o token para que não possa ser usado novamente
+        await db.execute(
+            'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE reset_token = ?',
+            [hashedPassword, token]
+        );
+
+        // Redireciona para a página de login com uma mensagem de sucesso
+        res.redirect('/?redefinicao=sucesso'); // Você pode adicionar uma mensagem na página de login para isso
+
+    } catch (err) {
+        console.error('Erro em /reset/:token POST:', err.message);
+        res.status(500).send('Ocorreu um erro ao redefinir a senha.');
+    }
+});
+
+
+
 app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
