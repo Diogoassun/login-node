@@ -230,65 +230,74 @@ app.get('/forgot', (req, res) => {
 // ROTA POST: Lida com a solicitação de redefinição
 app.post('/forgot', async (req, res) => {
     const { email } = req.body;
-    console.log('\n--- NOVA SOLICITAÇÃO EM /forgot ---');
-    console.log(`1. E-mail recebido do formulário: ${email}`);
-
-    if (!email) {
-        console.log('ERRO: Nenhum e-mail foi enviado no formulário.');
-        return res.render('forgot', { sucesso: null, erro: 'Por favor, insira um e-mail.' });
-    }
+    // Adquirimos uma conexão específica do pool para controlar a transação.
+    let connection; 
 
     try {
-        // Passo 2: Gerar o hash do e-mail para procurar no banco
+        // Passo 1: Obter uma conexão do pool.
+        connection = await db.getConnection();
+        console.log('--- NOVA SOLICITAÇÃO EM /forgot ---');
+        console.log(`1. Conexão com o banco de dados obtida.`);
+
         const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-        console.log(`2. Hash gerado para o e-mail: ${emailHash}`);
+        const [rows] = await connection.execute('SELECT id FROM users WHERE email_hash = ?', [emailHash]);
 
-        // Passo 3: Tentar encontrar o utilizador no banco de dados
-        console.log('3. A procurar o utilizador no banco de dados...');
-        const [rows] = await db.execute('SELECT id, email FROM users WHERE email_hash = ?', [emailHash]);
-
-        // Passo 4: Analisar o resultado da busca
         if (rows.length === 0) {
-            console.log('4. RESULTADO: Nenhum utilizador encontrado com este hash de e-mail.');
-            console.log('   -> A execução será interrompida aqui, por isso o token fica NULL.');
-            // Mesmo que não encontre, enviamos uma mensagem genérica por segurança.
+            console.log('2. Utilizador não encontrado.');
+            // Importante: libertar a conexão antes de sair.
+            connection.release();
             return res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
         }
         
-        // Se o código chegou até aqui, o utilizador foi encontrado!
         const user = rows[0];
-        console.log(`4. RESULTADO: Utilizador encontrado! ID: ${user.id}`);
+        console.log(`2. Utilizador encontrado! ID: ${user.id}`);
 
-        // Passo 5: Gerar o token e a data de expiração
+        // Passo 2: Iniciar a transação.
+        await connection.beginTransaction();
+        console.log('3. Transação iniciada.');
+
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' ');
-        console.log('5. Token e data de expiração gerados com sucesso.');
-        console.log(`   -> Token: ${token}`);
-        console.log(`   -> Expira em: ${expires}`);
 
-        // Passo 6: Tentar salvar o token no banco de dados
-        console.log('6. A tentar ATUALIZAR o token no banco de dados...');
-        await db.execute(
+        // Passo 3: Executar o UPDATE dentro da transação.
+        await connection.execute(
             'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
-            [token, expires, user.id] // Usar o ID do utilizador é mais seguro e direto
+            [token, expires, user.id]
         );
-        console.log('7. ATUALIZAÇÃO no banco de dados executada com sucesso!');
+        console.log('4. Comando UPDATE executado.');
 
-        // Passo 7: Enviar o e-mail
+        // Passo 4: Confirmar a transação para salvar permanentemente.
+        await connection.commit();
+        console.log('5. Transação confirmada (COMMIT). A alteração está salva!');
+
         const resetLink = `http://${req.headers.host}/reset/${token}`;
-        console.log(`8. A enviar e-mail com o link: ${resetLink}`);
         await enviarEmail(
             email, 
             'Redefinição de Senha',
-            `Você solicitou uma redefinição de senha. Clique no link a seguir para criar uma nova senha: ${resetLink}`
+            `Você solicitou uma redefinição de senha. Clique no link a seguir: ${resetLink}`
         );
+        console.log('6. E-mail enviado.');
         
         res.render('forgot', { erro: null, sucesso: 'Se um utilizador com este e-mail existir, um link de redefinição foi enviado.' });
 
     } catch (err) {
-        console.error('!!! ERRO CRÍTICO DENTRO DO BLOCO try...catch !!!');
+        console.error('!!! ERRO CRÍTICO !!!');
         console.error(err);
+        
+        // Se algo der errado, desfazemos a transação.
+        if (connection) {
+            await connection.rollback();
+            console.log('Transação desfeita (ROLLBACK).');
+        }
+
         res.render('forgot', { sucesso: null, erro: 'Ocorreu um erro interno. Tente novamente.' });
+
+    } finally {
+        // Passo final e crucial: sempre libertar a conexão de volta para o pool.
+        if (connection) {
+            connection.release();
+            console.log('7. Conexão com o banco de dados libertada.');
+        }
     }
 });
 
