@@ -336,9 +336,9 @@ app.post('/reset/:token', async (req, res) => {
         }
 
         // Verifica se as senhas coincidem
-        if (password !== confirmPassword) {
-            return res.render('reset', { erro: 'As senhas não coincidem.', token });
-        }
+       // if (password !== confirmPassword) {
+       //     return res.render('reset', { erro: 'As senhas não coincidem.', token });
+       // }
 
         // Gera o hash da nova senha
         const saltRounds = 10;
