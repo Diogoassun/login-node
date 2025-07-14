@@ -137,39 +137,50 @@ app.get('/register', (req, res) => res.render('register'));
 
 // Rota de Registro com Criptografia
 app.post('/register', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).send('Preencha o e-mail e a senha');
-  
-  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  if (!emailValido) return res.status(400).send('Formato de e-mail inválido');
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).send('Preencha o e-mail e a senha');
+  
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailValido) return res.status(400).send('Formato de e-mail inválido');
 
-  try {
-    const response = await axios.get('http://apilayer.net/api/check', {
-      params: { access_key: CONFIG.MAILBOX_API_KEY, email, smtp: 1, format: 1 }
-    });
-    if (!response.data.format_valid || !response.data.mx_found || response.data.disposable) {
+  try {
+    // --- INÍCIO DA INTEGRAÇÃO COM A ABSTRACT API ---
+    const apiKey = 'f3ccded3c8744f58a0200ae957b612c6'; // A sua chave da Abstract API
+    const response = await axios.get(`https://emailvalidation.abstractapi.com/v1/?api_key=${apiKey}&email=${email}`);
+    
+    // Verificamos a resposta da API.
+    // 'UNDELIVERABLE' significa que o email não existe.
+    // 'is_disposable_email.value' verifica se é um email temporário.
+    if (response.data.deliverability === "UNDELIVERABLE" || response.data.is_disposable_email.value === true) {
       return res.status(400).send('Este endereço de e-mail não é válido ou não é permitido.');
     }
+    // --- FIM DA INTEGRAÇÃO ---
 
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-    const encryptedEmail = encrypt(email);
-    const emailHash = crypto.createHash('sha256').update(email).digest('hex');
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const encryptedEmail = encrypt(email);
+    const emailHash = crypto.createHash('sha256').update(email).digest('hex');
 
-    await db.execute(
-      'INSERT INTO users (email, password, email_hash) VALUES (?, ?, ?)',
-      [encryptedEmail, hashedPassword, emailHash]
-    );
+    await db.execute(
+      'INSERT INTO users (email, password, email_hash) VALUES (?, ?, ?)',
+      [encryptedEmail, hashedPassword, emailHash]
+    );
 
-    await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
-    res.redirect('/?cadastro=sucesso');
-  } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).send('Este e-mail já está cadastrado');
+    await enviarEmail(email, 'Bem-vindo!', 'Seu cadastro foi realizado com sucesso!');
+    res.redirect('/?cadastro=sucesso');
+
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).send('Este e-mail já está cadastrado');
+    }
+    // Captura erros que podem vir da chamada da API (ex: limite excedido)
+    if (err.response) {
+        console.error('Erro da API de validação:', err.response.data);
+    } else {
+        console.error('Erro ao cadastrar:', err.message);
     }
-    console.error('Erro ao cadastrar:', err.message);
-    res.status(500).send('Erro ao cadastrar usuário');
-  }
+    res.status(500).send('Erro ao cadastrar usuário');
+  }
 });
 
 
